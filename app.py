@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import mimetypes
 import os
 import secrets
@@ -210,6 +211,47 @@ def application(env, start_response):
                     link = activation(c,uid)
                     c.commit()
                     return respond(201, {'activation_url':link})
+            if path == '/api/admins' and method == 'GET':
+                admin(user)
+                rows = c.execute("SELECT id,name,email,active,(password IS NOT NULL) activated FROM users WHERE role='admin' ORDER BY name").fetchall()
+                return respond(200, {'admins': [dict(r) for r in rows]})
+            if path.startswith('/api/admins/') and method == 'POST':
+                admin(user)
+                parts = path.split('/')
+                if len(parts) != 5:
+                    raise Problem(404,'not_found')
+                uid, action = parts[3:]
+                target = c.execute("SELECT * FROM users WHERE id=? AND role='admin' AND active=1", (uid,)).fetchone()
+                if not target:
+                    raise Problem(404,'not_found')
+                if action == 'activation':
+                    link = activation(c,uid)
+                    c.commit()
+                    return respond(200, {'activation_url':link})
+                raise Problem(404,'not_found')
+            if path.startswith('/api/players/') and method in ('PUT','DELETE'):
+                admin(user)
+                parts = path.split('/')
+                if len(parts) != 4:
+                    raise Problem(404,'not_found')
+                uid = parts[3]
+                player = c.execute("SELECT * FROM users WHERE id=? AND role='player'",(uid,)).fetchone()
+                if not player:
+                    raise Problem(404,'not_found')
+                if method == 'PUT':
+                    body = read_json(env)
+                    name, email = str(body.get('name','')).strip(), str(body.get('email','')).strip().lower()
+                    if not name or len(name) > 120 or len(email) > 254 or '@' not in email or ' ' in email:
+                        raise Problem(400,'user_fields')
+                    c.execute('UPDATE users SET name=?,email=? WHERE id=?',(name,email,uid))
+                    c.commit()
+                    return respond(200,{'ok':True})
+                c.execute('DELETE FROM documents WHERE user_id=?',(uid,))
+                c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
+                c.execute('DELETE FROM activations WHERE user_id=?',(uid,))
+                c.execute('DELETE FROM users WHERE id=?',(uid,))
+                c.commit()
+                return respond(200,{'ok':True})
             if path.startswith('/api/players/') and method == 'POST':
                 admin(user)
                 parts = path.split('/')
@@ -289,7 +331,6 @@ def application(env, start_response):
     except Exception as e:
         if psycopg is not None and isinstance(e, psycopg.errors.UniqueViolation):
             return respond(409, {'error':'email_exists'})
-        import logging
         logging.exception('The Mile request failed')
         return respond(500, {'error':'server_error'})
 
