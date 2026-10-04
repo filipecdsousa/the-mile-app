@@ -10,3 +10,20 @@
 html{min-height:100%;background:#000}body{min-height:100dvh;background:#f3f3f3;-webkit-tap-highlight-color:transparent}.app{min-height:calc(100dvh - 80px)}header{padding-top:max(25px,env(safe-area-inset-top));padding-left:max(36px,env(safe-area-inset-left));padding-right:max(36px,env(safe-area-inset-right))}footer{padding-bottom:max(20px,env(safe-area-inset-bottom));padding-left:max(36px,env(safe-area-inset-left));padding-right:max(36px,env(safe-area-inset-right))}.header-actions button{white-space:nowrap}.folder,.metric,.row,.inline-form{transition:border-color .15s ease,transform .15s ease,background .15s ease}.folder:active{transform:scale(.99)}.download{touch-action:manipulation}.row .actions{justify-content:flex-end}
 @media(display-mode:standalone){body{background:#fafafa}.app{margin:0 auto;max-width:none;border:0;border-radius:0;min-height:100dvh}header{position:sticky;top:0;z-index:20}main{min-height:calc(100dvh - 170px)}}
 @media(max-width:650px){body{background:#fafafa}.app{min-height:100dvh}header{padding-top:max(18px,env(safe-area-inset-top));padding-left:max(18px,env(safe-area-inset-left));padding-right:max(18px,env(safe-area-inset-right));position:sticky;top:0;z-index:20;box-shadow:0 1px 0 rgba(255,255,255,.08)}.wordmark{width:132px;height:32px;background-size:176px 176px}.header-actions button{padding:10px 11px;min-width:44px}.header-actions{gap:7px}main{padding:28px max(20px,env(safe-area-inset-right)) max(34px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));min-height:calc(100dvh - 152px)}h1{font-size:30px;letter-spacing:-1px}.subtitle{margin-bottom:24px}.folders{gap:11px}.folder{border-radius:14px;padding:20px 18px;min-height:86px;gap:17px;background:#fff}.folder strong{font-size:16px;margin-bottom:6px}.folder small{font-size:11px}.folder-icon{flex:0 0 auto}.row{padding:17px 0}.row .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px}.row .actions>*{text-align:center;width:100%}.player-control .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.overview{gap:9px;margin:23px 0 30px}.metric{padding:16px;border-radius:13px}.metric strong{font-size:23px}.inline-form{padding:18px;border-radius:14px}.primary,.secondary,.actions button,a.download{border-radius:10px}footer{padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right));padding-bottom:max(18px,env(safe-area-inset-bottom));font-size:10px}.login{max-width:none}.login h1{font-size:34px}.login .primary{min-height:50px}.subtle{min-height:44px}.back{min-height:44px;margin-bottom:14px}.panel-section{margin-top:26px}.section-head{align-items:flex-start}.admin-row .actions{display:grid;grid-template-columns:1fr 1fr}.admin-row .badge{justify-content:center}.topline{align-items:flex-start}.topline .primary{width:100%}dialog{border-radius:16px;margin:auto}.notice-link{font-size:14px}}
+
+
+/* Phase 3.1 — tighter player experience */
+@media(max-width:650px){
+  header{padding-top:max(12px,env(safe-area-inset-top));padding-bottom:12px}
+  .wordmark{width:116px;height:28px;background-size:155px 155px}
+  .header-actions button{border-color:#3d3d3d;padding:8px 10px;font-size:11px;min-height:40px}
+  main{padding-top:24px}
+  .folders{gap:9px}
+  .folder{min-height:74px;padding:15px 16px;gap:15px;border-radius:13px}
+  .folder strong{font-size:15px;margin-bottom:4px}
+  .folder small{font-size:11px}
+  footer{display:none}
+  .row{padding:15px 0}
+  .row .actions{grid-template-columns:1fr}
+  .row .actions .primary{background:#111;color:#fff;border-color:#111}
+}
