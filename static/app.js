@@ -266,6 +266,19 @@ function renderPlayer(w) {
     docs=(await api('/documents?player='+encodeURIComponent(owner.id))).documents;mode='';render();
   });
 
+  ui.root.querySelectorAll('[data-title]').forEach(b=>b.onclick=async()=>{
+    const d=docs.find(x=>x.id===b.dataset.title);
+    const title=prompt(w.titlePrompt,d?d.title:'');
+    if(title===null)return;
+    const clean=title.trim();
+    if(!clean)return;
+    try{
+      await api('/documents/'+b.dataset.title,{method:'PATCH',body:{title:clean}});
+      docs=(await api('/documents?player='+encodeURIComponent(owner.id))).documents;
+      render();
+    }catch(e){error(e)}
+  });
+
   ui.root.querySelectorAll('[data-replace]').forEach(b=>b.onclick=()=>{
     const input=document.createElement('input'); input.type='file'; input.accept='application/pdf,.pdf';
     input.onchange=async()=>{const file=input.files[0];if(!file)return;try{if(file.size>20*1024*1024)throw Error('file_size');b.disabled=true;await api('/documents/'+b.dataset.replace,{method:'PUT',body:file,binary:true});docs=(await api('/documents?player='+encodeURIComponent(owner.id))).documents;render()}catch(e){error(e)}finally{b.disabled=false}};
