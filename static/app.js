@@ -3,7 +3,8 @@
 const ui = {
   root: document.getElementById('content'),
   lang: document.getElementById('language'),
-  logout: document.getElementById('logout')
+  logout: document.getElementById('logout'),
+  install: document.getElementById('install')
 };
 
 let lang = localStorage.getItem('mile-language') === 'en' ? 'en' : 'pt';
@@ -16,6 +17,7 @@ let admins = [];
 let docs = [];
 let mode = '';
 let activationToken = new URLSearchParams(location.search).get('activate');
+let installPrompt = null;
 if (activationToken) history.replaceState(null, '', location.pathname);
 
 const folders = ['nutrition', 'menus', 'other'];
@@ -27,7 +29,8 @@ const words = {
     download: 'Descarregar', back: '← Voltar', players: 'Jogadores', management: 'Administração',
     manageSub: 'Gere acessos, jogadores e documentos a partir de um único painel.', newPlayer: '+ Criar jogador',
     manage: 'Gerir', upload: '+ Carregar PDF', name: 'Nome', email: 'Email', password: 'Palavra-passe', enter: 'Entrar',
-    loginSub: 'Acede à tua área privada.', create: 'Criar conta', foot: 'Nutrição. Performance. Detalhe.', logout: 'Sair',
+    loginSub: 'Acede à tua área privada.', create: 'Criar conta', foot: 'Nutrição. Performance. Detalhe.', logout: 'Sair', install: 'Instalar',
+    installTitle: 'Adicionar The Mile ao telemóvel', installIOS: 'No iPhone: abre o menu Partilhar do Safari e escolhe “Adicionar ao ecrã principal”. Depois a The Mile abre como uma app.', installOther: 'Podes instalar a The Mile no ecrã principal para abrir em modo app.',
     activate: 'Definir palavra-passe', activateSub: 'Escolhe uma palavra-passe com pelo menos 12 caracteres.',
     confirm: 'Confirmar palavra-passe', save: 'Guardar', cancel: 'Cancelar', file: 'Ficheiro PDF', pdfNote: 'PDF até 20 MB.',
     empty: 'Ainda não há documentos nesta pasta.', noPlayers: 'Ainda não foram criados jogadores.', replace: 'Substituir',
@@ -54,7 +57,8 @@ const words = {
     download: 'Download', back: '← Back', players: 'Players', management: 'Administration',
     manageSub: 'Manage access, players and documents from one dashboard.', newPlayer: '+ Add player',
     manage: 'Manage', upload: '+ Upload PDF', name: 'Name', email: 'Email', password: 'Password', enter: 'Sign in',
-    loginSub: 'Access your private area.', create: 'Create account', foot: 'Nutrition. Performance. Detail.', logout: 'Sign out',
+    loginSub: 'Access your private area.', create: 'Create account', foot: 'Nutrition. Performance. Detail.', logout: 'Sign out', install: 'Install',
+    installTitle: 'Add The Mile to your phone', installIOS: 'On iPhone: open Safari’s Share menu and choose “Add to Home Screen”. The Mile will then open like an app.', installOther: 'You can install The Mile on your home screen to open it in app mode.',
     activate: 'Set password', activateSub: 'Choose a password with at least 12 characters.',
     confirm: 'Confirm password', save: 'Save', cancel: 'Cancel', file: 'PDF file', pdfNote: 'PDF up to 20 MB.',
     empty: 'There are no documents in this folder yet.', noPlayers: 'No players have been added yet.', replace: 'Replace',
@@ -274,6 +278,7 @@ function render() {
   ui.lang.textContent=lang==='pt'?'EN':'PT';
   ui.logout.hidden=!user;
   ui.logout.textContent=w.logout;
+  ui.install.textContent=w.install;
   document.getElementById('tagline').textContent=w.foot;
 
   if (!user || activationToken) {
@@ -290,4 +295,38 @@ function render() {
 
 ui.lang.onclick=()=>{lang=lang==='pt'?'en':'pt';localStorage.setItem('mile-language',lang);render();};
 ui.logout.onclick=async()=>{try{await api('/logout',{method:'POST',body:{}});user=null;csrf=null;selected=null;folder=null;mode='';players=[];admins=[];docs=[];render()}catch(e){error(e)}};
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function isiOS() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+function updateInstallButton() {
+  ui.install.hidden = isStandalone() || (!installPrompt && !isiOS());
+}
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  installPrompt = e;
+  updateInstallButton();
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  updateInstallButton();
+});
+ui.install.onclick = async () => {
+  const w = t();
+  if (installPrompt) {
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    installPrompt = null;
+    updateInstallButton();
+    return;
+  }
+  notify(w.installTitle, isiOS() ? w.installIOS : w.installOther);
+};
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+updateInstallButton();
 refresh().catch(e=>{render();error(e)});
