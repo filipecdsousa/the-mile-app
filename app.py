@@ -134,9 +134,23 @@ def application(env, start_response):
     try:
         method = env.get('REQUEST_METHOD', 'GET')
         path = env.get('PATH_INFO', '/')
-        if method == 'GET' and path in ('/', '/app.js', '/style.css', '/logo.png'):
-            file = ROOT / 'static' / ('index.html' if path == '/' else path[1:])
-            return respond(200, file.read_bytes(), mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
+        static_files = {
+            '/': 'index.html',
+            '/app.js': 'app.js',
+            '/style.css': 'style.css',
+            '/logo.png': 'logo.png',
+            '/manifest.webmanifest': 'manifest.webmanifest',
+            '/sw.js': 'sw.js',
+            '/icon-192.png': 'icon-192.png',
+            '/icon-512.png': 'icon-512.png',
+            '/apple-touch-icon.png': 'apple-touch-icon.png',
+        }
+        if method == 'GET' and path in static_files:
+            file = ROOT / 'static' / static_files[path]
+            mime = mimetypes.guess_type(file.name)[0] or 'application/octet-stream'
+            if file.name.endswith('.webmanifest'):
+                mime = 'application/manifest+json'
+            return respond(200, file.read_bytes(), mime)
         if not path.startswith('/api/'):
             raise Problem(404, 'not_found')
         cookies = SimpleCookie()
