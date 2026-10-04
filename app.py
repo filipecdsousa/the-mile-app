@@ -7,6 +7,12 @@ import mimetypes
 import os
 import secrets
 import sqlite3
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:
+    psycopg = None
+    dict_row = None
 import time
 from http.cookies import SimpleCookie
 from pathlib import Path
@@ -14,6 +20,7 @@ from urllib.parse import parse_qs, quote
 
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('MILE_DATA_DIR', ROOT / 'data')).resolve()
+DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
 BASE_URL = os.environ.get('MILE_BASE_URL', 'http://localhost:8000').rstrip('/')
 SECURE = BASE_URL.startswith('https://')
 MAX_PDF = 20 * 1024 * 1024
@@ -21,22 +28,65 @@ FOLDERS = ('nutrition', 'menus', 'other')
 ADMINS = (('Filipe Sousa', 'filipesousa@themile.pt'), ('Raquel Gomes', 'raquelgomes@themile.pt'))
 
 def connect():
+    if DATABASE_URL:
+        if psycopg is None:
+            raise RuntimeError('DATABASE_URL is set but psycopg is not installed')
+        return PgConnection(psycopg.connect(DATABASE_URL, row_factory=dict_row))
     c = sqlite3.connect(DATA / 'mile.sqlite3', timeout=20)
     c.row_factory = sqlite3.Row
     c.execute('PRAGMA foreign_keys = ON')
     return c
 
+class PgCursor:
+    def __init__(self, cursor):
+        self.cursor = cursor
+    def fetchone(self):
+        return self.cursor.fetchone()
+    def fetchall(self):
+        return self.cursor.fetchall()
+
+class PgConnection:
+    def __init__(self, conn):
+        self.conn = conn
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type:
+            self.conn.rollback()
+        else:
+            self.conn.commit()
+        self.conn.close()
+    def execute(self, sql, params=()):
+        sql = sql.replace('?', '%s')
+        if sql.startswith('INSERT OR IGNORE INTO users'):
+            sql = sql.replace('INSERT OR IGNORE INTO users', 'INSERT INTO users', 1) + ' ON CONFLICT (email) DO NOTHING'
+        elif sql.startswith('INSERT OR REPLACE INTO attempts'):
+            sql = 'INSERT INTO attempts(key,count,until_time) VALUES(%s,%s,%s) ON CONFLICT (key) DO UPDATE SET count=EXCLUDED.count, until_time=EXCLUDED.until_time'
+        return PgCursor(self.conn.execute(sql, params))
+    def executescript(self, script):
+        self.conn.execute(script)
+    def commit(self):
+        self.conn.commit()
+
 def initialize():
     DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
-    (DATA / 'pdfs').mkdir(exist_ok=True, mode=0o700)
     with connect() as c:
-        c.executescript('''
-        CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','player')), password TEXT, active INTEGER NOT NULL DEFAULT 1);
-        CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), csrf TEXT NOT NULL, expires INTEGER NOT NULL);
-        CREATE TABLE IF NOT EXISTS activations(token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
-        CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), folder TEXT NOT NULL, title TEXT NOT NULL, size INTEGER NOT NULL, updated INTEGER NOT NULL, uploaded_by TEXT NOT NULL REFERENCES users(id));
-        CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY, count INTEGER NOT NULL, until_time INTEGER NOT NULL);
-        ''')
+        if DATABASE_URL:
+            c.executescript('''
+            CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','player')), password TEXT, active INTEGER NOT NULL DEFAULT 1);
+            CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), csrf TEXT NOT NULL, expires BIGINT NOT NULL);
+            CREATE TABLE IF NOT EXISTS activations(token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires BIGINT NOT NULL);
+            CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), folder TEXT NOT NULL, title TEXT NOT NULL, size BIGINT NOT NULL, updated BIGINT NOT NULL, uploaded_by TEXT NOT NULL REFERENCES users(id), data BYTEA NOT NULL);
+            CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY, count INTEGER NOT NULL, until_time BIGINT NOT NULL);
+            ''')
+        else:
+            c.executescript('''
+            CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','player')), password TEXT, active INTEGER NOT NULL DEFAULT 1);
+            CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), csrf TEXT NOT NULL, expires INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS activations(token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), folder TEXT NOT NULL, title TEXT NOT NULL, size INTEGER NOT NULL, updated INTEGER NOT NULL, uploaded_by TEXT NOT NULL REFERENCES users(id), data BLOB NOT NULL);
+            CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY, count INTEGER NOT NULL, until_time INTEGER NOT NULL);
+            ''')
         for name, email in ADMINS:
             c.execute('INSERT OR IGNORE INTO users(id,name,email,role) VALUES(?,?,?,?)', (secrets.token_hex(16), name, email, 'admin'))
 
@@ -197,14 +247,8 @@ def application(env, start_response):
                     if not title.lower().endswith('.pdf'):
                         title += '.pdf'
                     did = secrets.token_hex(16)
-                    file = DATA / 'pdfs' / did
-                    file.write_bytes(blob)
-                    try:
-                        c.execute('INSERT INTO documents VALUES(?,?,?,?,?,?,?)',(did,uid,folder,title,len(blob),now,user['id']))
-                        c.commit()
-                    except Exception:
-                        file.unlink(missing_ok=True)
-                        raise
+                    c.execute('INSERT INTO documents(id,user_id,folder,title,size,updated,uploaded_by,data) VALUES(?,?,?,?,?,?,?,?)',(did,uid,folder,title,len(blob),now,user['id'],blob))
+                    c.commit()
                     return respond(201,{'id':did})
             if path.startswith('/api/documents/'):
                 did = path.split('/')[-1]
@@ -217,20 +261,16 @@ def application(env, start_response):
                     blob = read_body(env, MAX_PDF)
                     if not blob.startswith(b'%PDF-') or b'%%EOF' not in blob[-4096:]:
                         raise Problem(400,'pdf_only')
-                    temporary = DATA / 'pdfs' / (d['id'] + '.tmp-' + secrets.token_hex(8))
-                    temporary.write_bytes(blob)
-                    os.replace(temporary, DATA / 'pdfs' / d['id'])
-                    c.execute('UPDATE documents SET size=?,updated=?,uploaded_by=? WHERE id=?',(len(blob),now,user['id'],d['id']))
+                    c.execute('UPDATE documents SET size=?,updated=?,uploaded_by=?,data=? WHERE id=?',(len(blob),now,user['id'],blob,d['id']))
                     c.commit()
                     return respond(200,{'ok':True})
                 if method == 'GET':
                     headers.append(('Content-Disposition', "attachment; filename=document.pdf; filename*=UTF-8''" + quote(d['title'],safe='')))
-                    return respond(200,(DATA/'pdfs'/d['id']).read_bytes(),'application/pdf')
+                    return respond(200,bytes(d['data']),'application/pdf')
                 if method == 'DELETE':
                     admin(user)
                     c.execute('DELETE FROM documents WHERE id=?',(did,))
                     c.commit()
-                    (DATA/'pdfs'/d['id']).unlink(missing_ok=True)
                     return respond(200,{'ok':True})
             raise Problem(404,'not_found')
     except Problem as e:
@@ -239,7 +279,9 @@ def application(env, start_response):
         return respond(409, {'error':'email_exists'})
     except (ValueError, json.JSONDecodeError):
         return respond(400, {'error':'invalid_request'})
-    except Exception:
+    except Exception as e:
+        if psycopg is not None and isinstance(e, psycopg.errors.UniqueViolation):
+            return respond(409, {'error':'email_exists'})
         import logging
         logging.exception('The Mile request failed')
         return respond(500, {'error':'server_error'})
