@@ -307,8 +307,8 @@ def application(env, start_response):
                     blob = read_body(env, MAX_PDF)
                     if not blob.startswith(b'%PDF-') or b'%%EOF' not in blob[-4096:]:
                         raise Problem(400,'pdf_only')
-                    if not title.lower().endswith('.pdf'):
-                        title += '.pdf'
+                    if not title or len(title) > 180 or any(ord(ch) < 32 for ch in title):
+                        raise Problem(400,'document_fields')
                     did = secrets.token_hex(16)
                     c.execute('INSERT INTO documents(id,user_id,folder,title,size,updated,uploaded_by,data) VALUES(?,?,?,?,?,?,?,?)',(did,uid,folder,title,len(blob),now,user['id'],blob))
                     c.commit()
@@ -319,6 +319,15 @@ def application(env, start_response):
                 if not d:
                     raise Problem(404,'not_found')
                 authorize_owner(user,d['user_id'])
+                if method == 'PATCH':
+                    admin(user)
+                    payload = read_json(env)
+                    title = str(payload.get('title','')).strip()
+                    if not title or len(title) > 180 or any(ord(ch) < 32 for ch in title):
+                        raise Problem(400,'document_fields')
+                    c.execute('UPDATE documents SET title=?,updated=? WHERE id=?',(title,now,d['id']))
+                    c.commit()
+                    return respond(200,{'ok':True})
                 if method == 'PUT':
                     admin(user)
                     blob = read_body(env, MAX_PDF)
@@ -328,7 +337,7 @@ def application(env, start_response):
                     c.commit()
                     return respond(200,{'ok':True})
                 if method == 'GET':
-                    headers.append(('Content-Disposition', "attachment; filename=document.pdf; filename*=UTF-8''" + quote(d['title'],safe='')))
+                    headers.append(('Content-Disposition', "inline; filename=document.pdf; filename*=UTF-8''" + quote((d['title'] if d['title'].lower().endswith('.pdf') else d['title'] + '.pdf'),safe='')))
                     return respond(200,bytes(d['data']),'application/pdf')
                 if method == 'DELETE':
                     admin(user)
