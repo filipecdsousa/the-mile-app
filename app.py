@@ -23,6 +23,8 @@ DATA = Path(os.environ.get('MILE_DATA_DIR', ROOT / 'data')).resolve()
 DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
 BASE_URL = os.environ.get('MILE_BASE_URL', 'http://localhost:8000').strip().rstrip('/')
 ALLOWED_ORIGINS = {BASE_URL, 'https://the-mile-app.onrender.com'}
+ALLOWED_ORIGIN_HOSTS = {h for h in (urlparse(x).hostname for x in ALLOWED_ORIGINS) if h}
+ALLOWED_ORIGIN_HOSTS.update({'app.themile.pt', 'the-mile-app.onrender.com'})
 SECURE = BASE_URL.startswith('https://')
 MAX_PDF = 20 * 1024 * 1024
 FOLDERS = ('nutrition', 'menus', 'other')
@@ -147,8 +149,12 @@ def application(env, start_response):
             user = c.execute('SELECT u.*,s.csrf FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.expires>? AND u.active=1', (digest(token), now)).fetchone()
             if method != 'GET':
                 origin = (env.get('HTTP_ORIGIN') or '').strip().rstrip('/')
-                if origin and origin not in ALLOWED_ORIGINS:
-                    raise Problem(403, 'origin')
+                if origin:
+                    parsed_origin = urlparse(origin)
+                    origin_host = (parsed_origin.hostname or '').lower()
+                    if parsed_origin.scheme not in ('https', 'http') or origin_host not in ALLOWED_ORIGIN_HOSTS:
+                        logging.warning('Blocked origin: %r (host=%r, allowed=%r)', origin, origin_host, sorted(ALLOWED_ORIGIN_HOSTS))
+                        raise Problem(403, 'origin')
                 if user and not hmac.compare_digest(env.get('HTTP_X_CSRF_TOKEN', ''), user['csrf']):
                     raise Problem(403, 'csrf')
             if path == '/api/me' and method == 'GET':
