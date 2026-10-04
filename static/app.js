@@ -26,7 +26,7 @@ const words = {
   pt: {
     private: 'Área privada', hello: 'Olá,', sub: 'Os teus documentos, num só lugar.',
     folders: ['Planos nutricionais', 'Menus', 'Outros documentos'], document: 'documento', documents: 'documentos',
-    download: 'Descarregar', back: '← Voltar', players: 'Jogadores', management: 'Administração',
+    download: 'Abrir', documentTitle: 'Título apresentado ao jogador', editTitle: 'Editar título', titlePrompt: 'Título apresentado ao jogador:', back: '← Voltar', players: 'Jogadores', management: 'Administração',
     manageSub: 'Gere acessos, jogadores e documentos a partir de um único painel.', newPlayer: '+ Criar jogador',
     manage: 'Gerir', upload: '+ Carregar PDF', name: 'Nome', email: 'Email', password: 'Palavra-passe', enter: 'Entrar',
     loginSub: 'Acede à tua área privada.', create: 'Criar conta', foot: 'Nutrição. Performance. Detalhe.', logout: 'Sair', install: 'Instalar',
@@ -54,7 +54,7 @@ const words = {
   en: {
     private: 'Private area', hello: 'Hello,', sub: 'Your documents, all in one place.',
     folders: ['Nutrition plans', 'Menus', 'Other documents'], document: 'document', documents: 'documents',
-    download: 'Download', back: '← Back', players: 'Players', management: 'Administration',
+    download: 'Open', documentTitle: 'Title shown to the player', editTitle: 'Edit title', titlePrompt: 'Title shown to the player:', back: '← Back', players: 'Players', management: 'Administration',
     manageSub: 'Manage access, players and documents from one dashboard.', newPlayer: '+ Add player',
     manage: 'Manage', upload: '+ Upload PDF', name: 'Name', email: 'Email', password: 'Password', enter: 'Sign in',
     loginSub: 'Access your private area.', create: 'Create account', foot: 'Nutrition. Performance. Detail.', logout: 'Sign out', install: 'Install',
@@ -241,11 +241,11 @@ function renderPlayer(w) {
 
   const title = folder === null ? (isAdmin ? owner.name : w.hello + ' ' + owner.name.split(' ')[0] + '.') : w.folders[folders.indexOf(folder)];
   ui.root.innerHTML = `${isAdmin || folder!==null ? `<button class="back" id="back">${w.back}</button>` : ''}
-    <p class="eyebrow">${isAdmin ? esc(owner.email) : w.private}</p>
+    ${folder===null ? `<p class="eyebrow">${isAdmin ? esc(owner.email) : w.private}</p>` : ''}
     <div class="topline"><h1>${esc(title)}</h1>${isAdmin && folder!==null && mode!=='upload' ? `<button class="primary" id="upload">${w.upload}</button>` : ''}</div>
     ${folder===null ? `<p class="subtitle">${w.sub}</p><div class="folders">${folders.map((f,i)=>{const count=docs.filter(d=>d.folder===f).length;return `<button class="folder" data-folder="${f}"><span class="folder-icon" aria-hidden="true"></span><div><strong>${w.folders[i]}</strong><small>${count} ${count===1?w.document:w.documents}</small></div></button>`}).join('')}</div>${isAdmin ? `<div class="player-control"><div><span class="badge ${statusClass(owner)}">${statusLabel(owner,w)}</span></div><div class="actions player-actions"><button class="secondary" id="edit">${w.edit}</button><button class="secondary" id="reset" ${!owner.active?'disabled':''}>${w.reset}</button><button class="secondary" id="status">${owner.active?w.deactivate:w.reactivate}</button><button class="secondary danger" id="delete-player">${w.deletePlayer}</button></div></div>` : ''}` :
-      mode==='upload' ? `<form class="inline-form"><label for="pdf">${w.file}</label><input id="pdf" name="pdf" type="file" accept="application/pdf,.pdf" required><p class="note">${w.pdfNote}</p><p class="error" role="alert"></p><div class="actions"><button class="primary" type="submit">${w.save}</button><button class="secondary" type="button" id="cancel">${w.cancel}</button></div></form>` :
-      docs.filter(d=>d.folder===folder).map(d=>`<div class="row"><div><strong>${esc(d.title)}</strong><p>PDF · ${new Intl.DateTimeFormat(lang==='pt'?'pt-PT':'en-GB').format(new Date(d.updated*1000))} · ${(d.size/1024/1024).toFixed(1)} MB</p></div><div class="actions"><a class="secondary download" href="/api/documents/${d.id}">${w.download}</a>${isAdmin?`<button class="secondary" data-replace="${d.id}">${w.replace}</button><button class="secondary danger" data-delete="${d.id}">${w.remove}</button>`:''}</div></div>`).join('') || `<p class="empty">${w.empty}</p>`}`;
+      mode==='upload' ? `<form class="inline-form"><label for="doc-title">${w.documentTitle}</label><input id="doc-title" name="title" type="text" maxlength="180" required><label for="pdf">${w.file}</label><input id="pdf" name="pdf" type="file" accept="application/pdf,.pdf" required><p class="note">${w.pdfNote}</p><p class="error" role="alert"></p><div class="actions"><button class="primary" type="submit">${w.save}</button><button class="secondary" type="button" id="cancel">${w.cancel}</button></div></form>` :
+      docs.filter(d=>d.folder===folder).map(d=>`<div class="row"><div><strong>${esc(d.title)}</strong><p>PDF · ${new Intl.DateTimeFormat(lang==='pt'?'pt-PT':'en-GB').format(new Date(d.updated*1000))} · ${(d.size/1024/1024).toFixed(1)} MB</p></div><div class="actions"><a class="primary download" href="/api/documents/${d.id}">${w.download}</a>${isAdmin?`<button class="secondary" data-title="${d.id}">${w.editTitle}</button><button class="secondary" data-replace="${d.id}">${w.replace}</button><button class="secondary danger" data-delete="${d.id}">${w.remove}</button>`:''}</div></div>`).join('') || `<p class="empty">${w.empty}</p>`}`;
 
   bind('back', async () => { if(mode){mode='';render();} else if(folder!==null){folder=null;render();} else {selected=null;await refresh();} });
   ui.root.querySelectorAll('[data-folder]').forEach(b => b.onclick = () => {folder=b.dataset.folder; mode=''; render();});
@@ -260,7 +260,9 @@ function renderPlayer(w) {
     const file=f.get('pdf');
     if(!file||!file.size)throw Error('pdf_only');
     if(file.size>20*1024*1024)throw Error('file_size');
-    await api('/documents?player='+encodeURIComponent(owner.id)+'&folder='+folder+'&title='+encodeURIComponent(file.name),{method:'POST',body:file,binary:true});
+    const title=String(f.get('title')||'').trim();
+    if(!title)throw Error('document_fields');
+    await api('/documents?player='+encodeURIComponent(owner.id)+'&folder='+folder+'&title='+encodeURIComponent(title),{method:'POST',body:file,binary:true});
     docs=(await api('/documents?player='+encodeURIComponent(owner.id))).documents;mode='';render();
   });
 
