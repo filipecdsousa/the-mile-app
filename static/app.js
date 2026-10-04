@@ -341,7 +341,7 @@ ui.install.onclick = async () => {
   notify(w.installTitle, isiOS() ? w.installIOS : w.installOther);
 };
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=31b').catch(() => {}));
 }
 updateInstallButton();
 refresh().catch(e=>{render();error(e)});
