@@ -16,7 +16,7 @@ except ImportError:
 import time
 from http.cookies import SimpleCookie
 from pathlib import Path
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, urlparse
 
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('MILE_DATA_DIR', ROOT / 'data')).resolve()
